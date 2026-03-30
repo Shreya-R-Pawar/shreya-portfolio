@@ -1,6 +1,6 @@
 import { Suspense, useState, useEffect, useRef } from 'react'
 import { Canvas } from '@react-three/fiber' 
-import { OrbitControls } from '@react-three/drei'
+import { OrbitControls, PerformanceMonitor } from '@react-three/drei' // Added PerformanceMonitor here
 import { useNavigate } from 'react-router-dom'
 import Loader from '../components/Loader'
 import BeachIsland from '../models/BeachIsland'
@@ -10,6 +10,9 @@ import Sky from '../models/Sky'
 const Home = () => {
   const navigate = useNavigate();
   
+  // --- PERFORMANCE STATE ---
+  const [lowPriority, setLowPriority] = useState(false);
+
   const [introStage, setIntroStage] = useState(() => {
     return Number(sessionStorage.getItem('portfolioStage')) || 0;
   });
@@ -17,15 +20,14 @@ const Home = () => {
   const [isFlashing, setIsFlashing] = useState(false);
   const controlsRef = useRef();
 
-  // --- RESPONSIVE LOGIC START ---
   const adjustIslandForScreenSize = () => {
     let screenScale = null;
     let screenPosition = [0, -2.5, 0];
     let rotation = [0.1, 4.7, 0];
 
     if (window.innerWidth < 768) {
-      screenScale = [0.6, 0.6, 0.6]; // Smaller scale for mobile
-      screenPosition = [0, -2, 0];    // Slightly higher to fit UI
+      screenScale = [0.6, 0.6, 0.6]; 
+      screenPosition = [0, -2, 0];    
     } else {
       screenScale = [1, 1, 1];
       screenPosition = [0, -2.5, 0];
@@ -40,11 +42,9 @@ const Home = () => {
     const handleResize = () => {
       setIslandConfig(adjustIslandForScreenSize());
     };
-
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-  // --- RESPONSIVE LOGIC END ---
 
   const stageContent = [
     { text: "Welcome to a digital corner of the Pacific... 🌴", btn: "Enter World" },
@@ -93,15 +93,12 @@ const Home = () => {
     <section className="w-full h-screen relative overflow-hidden bg-[#0094FF]">
       <div className={`absolute inset-0 bg-white z-[60] pointer-events-none transition-opacity duration-700 ${isFlashing ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* Responsive UI Box */}
       <div className="absolute top-10 md:top-20 left-0 right-0 z-10 flex items-center justify-center pointer-events-none px-6">
         <div key={introStage} className="relative pointer-events-auto flex flex-col items-center animate-pop-in w-full max-w-[450px]">
-          
           <div className="portfolio-msg-box p-6 md:p-7 rounded-[2rem] border-[3px] border-white shadow-[0_15px_40px_rgba(0,0,0,0.2)] text-center text-white">
             <p className="text-sm md:text-lg font-medium leading-relaxed mb-5 px-2">
               {stageContent[introStage].text}
             </p>
-
             <button 
               onClick={handleNextStage}
               className="group inline-flex items-center justify-center px-6 py-2 md:px-8 md:py-2.5 font-bold text-sm md:text-base text-blue-600 bg-white rounded-full shadow-lg hover:bg-[#00c6ff] hover:text-white transition-all duration-300 active:scale-95 animate-button-pulse"
@@ -117,30 +114,36 @@ const Home = () => {
       <Canvas 
         className="w-full h-screen bg-transparent" 
         camera={{ near: 0.1, far: 1000, position: [0, 5, 20] }}
-        gl={{ antialias: true }}
+        dpr={[1, 2]} 
+        gl={{ antialias: false, powerPreference: "high-performance" }}
       >
-        <Sky />
-        <Suspense fallback={<Loader />}>
-          <ambientLight intensity={0.7} />
-          <directionalLight position={[3, 5, 7]} intensity={1.5} /> 
-          <hemisphereLight skyColor="#b1e1ff" groundColor="#000000" intensity={1} />
-          
-          <BeachIsland 
-            position={islandConfig[1]} 
-            scale={islandConfig[0]} 
-            rotation={islandConfig[2]} 
-          />
-          
-          <FlyingBird />
-          <OrbitControls 
-            ref={controlsRef} 
-            autoRotate 
-            autoRotateSpeed={0.5} 
-            enableZoom={false} 
-            enableRotate={true} 
-            enablePan={false} 
-          />
-        </Suspense>
+        {/* The Monitor starts watching here */}
+        <PerformanceMonitor onDecline={() => setLowPriority(true)}>
+          <Sky />
+          <Suspense fallback={<Loader />}>
+            <ambientLight intensity={lowPriority ? 1 : 0.7} /> {/* Simplify lighting if lagging */}
+            <directionalLight position={[3, 5, 7]} intensity={1.5} /> 
+            <hemisphereLight skyColor="#b1e1ff" groundColor="#000000" intensity={1} />
+            
+            <BeachIsland 
+              position={islandConfig[1]} 
+              scale={islandConfig[0]} 
+              rotation={islandConfig[2]} 
+            />
+            
+            {/* If the device is struggling (lowPriority), we stop the bird to save CPU */}
+            {!lowPriority && <FlyingBird />}
+            
+            <OrbitControls 
+              ref={controlsRef} 
+              autoRotate 
+              autoRotateSpeed={0.5} 
+              enableZoom={false} 
+              enableRotate={true} 
+              enablePan={false} 
+            />
+          </Suspense>
+        </PerformanceMonitor>
       </Canvas>
 
       <style jsx>{`
